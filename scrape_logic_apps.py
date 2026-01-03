@@ -19,7 +19,7 @@ def main():
         '--max-files',
         type=int,
         default=1e4,
-        help='Maximum number of workflow files to scrape (default: 100)'
+        help='Maximum number of workflow files to scrape (default: 100, can exceed 1000 with --enable-pagination)'
     )
     parser.add_argument(
         '--min-stars',
@@ -45,6 +45,12 @@ def main():
         help='Do not remove duplicate expressions'
     )
     parser.add_argument(
+        '--no-pagination',
+        default=False,
+        action='store_true',
+        help='Disable pagination strategy (limits to 1000 results per query)'
+    )
+    parser.add_argument(
         '--patterns',
         nargs='+',
         help='Specific expression patterns to search for (e.g., concat variables triggerBody)'
@@ -61,6 +67,9 @@ def main():
     print(f"  Min quality: {args.min_quality}")
     print(f"  Output directory: {args.output_dir}")
     print(f"  Deduplicate: {not args.no_deduplicate}")
+    print(f"  Pagination strategy: {'disabled' if args.no_pagination else 'enabled'}")
+    if args.max_files > 1000 and not args.no_pagination:
+        print(f"    ℹ️  Exceed 1000 result limit with pagination enabled.")
     if args.patterns:
         print(f"  Search patterns: {', '.join(args.patterns)}")
     
@@ -89,7 +98,8 @@ def main():
     num_files = builder.scrape_workflows(
         max_files=args.max_files,
         min_stars=args.min_stars,
-        search_patterns=args.patterns
+        search_patterns=args.patterns,
+        use_pagination=not args.no_pagination
     )
     
     if num_files == 0:

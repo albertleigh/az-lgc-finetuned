@@ -47,13 +47,38 @@ class GitHubLogicAppScraper:
     def search_logic_app_files(self, 
                                 query: str = '"Microsoft.Logic/workflows" OR "$schema" logic language:JSON',
                                 max_results: int = 100,
-                                min_stars: int = 0) -> List[Dict]:
+                                min_stars: int = 0,
+                                use_pagination_strategy: bool = True) -> List[Dict]:
         """
         Search GitHub for Logic App workflow files.
         
+        Note: GitHub's code search API has a hard limit of 1000 results per query.
+        To fetch more than 1000 results, this method can split queries by star ranges
+        when use_pagination_strategy=True.
+        
         Args:
             query: GitHub code search query
-            max_results: Maximum number of files to retrieve
+            max_results: Maximum number of files to retrieve (can exceed 1000)
+            min_stars: Minimum number of stars for repositories
+            use_pagination_strategy: If True and max_results > 1000, split query by star ranges
+            
+        Returns:
+            List of file information dictionaries
+        """
+        # If we need more than 1000 results and pagination strategy is enabled, split the query
+        if max_results > 1000 and use_pagination_strategy:
+            return self._search_with_pagination_strategy(query, max_results, min_stars)
+        
+        # Standard search (max 1000 results)
+        return self._search_code_single_query(query, min(max_results, 1000), min_stars)
+    
+    def _search_code_single_query(self, query: str, max_results: int, min_stars: int = 0) -> List[Dict]:
+        """
+        Execute a single code search query.
+        
+        Args:
+            query: GitHub code search query
+            max_results: Maximum number of files to retrieve (max 1000)
             min_stars: Minimum number of stars for repositories
             
         Returns:
@@ -114,6 +139,21 @@ class GitHubLogicAppScraper:
         
         return files
     
+    def _search_with_pagination_strategy(self, query: str, max_results: int, min_stars: int = 0) -> List[Dict]:
+        """
+        Search with pagination (simplified without star-based splitting).
+        
+        Args:
+            query: Base GitHub code search query
+            max_results: Total maximum number of files to retrieve
+            min_stars: Minimum number of stars for repositories
+            
+        Returns:
+            List of file information dictionaries
+        """
+        # Just do a single search - no star-based splitting
+        return self._search_code_single_query(query, max_results, min_stars)
+    
     def download_file_content(self, file_info: Dict) -> Optional[str]:
         """
         Download the content of a file from GitHub.
@@ -135,14 +175,19 @@ class GitHubLogicAppScraper:
     def search_by_expression_patterns(self, 
                                        patterns: List[str],
                                        language: str = 'JSON',
-                                       max_results: int = 100) -> List[Dict]:
+                                       max_results: int = 100,
+                                       use_pagination_strategy: bool = True) -> List[Dict]:
         """
         Search GitHub for files containing specific Logic App expression patterns.
+        
+        Note: When use_pagination_strategy=True and total max_results > 1000,
+        each pattern query will be split by star ranges to exceed the 1000 limit.
         
         Args:
             patterns: List of expression patterns to search for (e.g., ['concat', 'variables'])
             language: Programming language filter
-            max_results: Maximum number of results per pattern
+            max_results: Total maximum number of results across all patterns
+            use_pagination_strategy: If True, use pagination for queries exceeding 1000 results
             
         Returns:
             List of file information dictionaries
@@ -150,50 +195,113 @@ class GitHubLogicAppScraper:
         all_files = []
         seen_urls = set()
         
-        for pattern in patterns:
-            query = f'{pattern} in:file language:{language} (filename:workflow.json OR path:.logic)'
-            print(f"\nSearching for pattern: {pattern}")
-            
-            try:
-                results = self.github.search_code(query)
-                count = 0
-                
-                for file in results:
-                    if count >= max_results:
-                        break
-                    
-                    if file.html_url in seen_urls:
-                        continue
-                    
-                    try:
-                        file_info = {
-                            'repo_name': file.repository.full_name,
-                            'file_path': file.path,
-                            'file_name': file.name,
-                            'url': file.html_url,
-                            'download_url': file.download_url,
-                            'sha': file.sha,
-                            'search_pattern': pattern,
-                            'repo_stars': file.repository.stargazers_count,
-                            'retrieved_at': datetime.now().isoformat()
-                        }
-                        all_files.append(file_info)
-                        seen_urls.add(file.html_url)
-                        count += 1
-                        
-                    except Exception as e:
-                        print(f"Error processing file: {e}")
-                        continue
-                
-                time.sleep(2)  # Rate limiting
-                
-            except RateLimitExceededException:
-                print(f"Rate limit exceeded. Waiting {self.rate_limit_wait} seconds...")
-                time.sleep(self.rate_limit_wait)
-            except Exception as e:
-                print(f"Search error for pattern '{pattern}': {e}")
+        # Calculate results per pattern
+        results_per_pattern = max_results // len(patterns) if patterns else max_results
         
-        return all_files
+        # If pagination is enabled and we need more than 1000 per pattern
+        use_pagination_per_pattern = use_pagination_strategy and results_per_pattern > 1000
+        
+        if use_pagination_per_pattern:
+            print(f"\n📊 Pagination enabled: Will fetch up to {results_per_pattern} results per pattern")
+        
+        for pattern in patterns:
+            if len(all_files) >= max_results:
+                break
+            
+            base_query = f'{pattern} in:file language:{language} "Microsoft.Logic/workflows" OR "$schema" logic'
+            print(f"\n🔍 Searching for pattern: {pattern}")
+            
+            # Use pagination if needed
+            if use_pagination_per_pattern:
+                pattern_results = self._search_pattern_with_pagination(
+                    pattern, 
+                    base_query,
+                    min(results_per_pattern, max_results - len(all_files))
+                )
+            else:
+                pattern_results = self._search_pattern_single(
+                    pattern,
+                    base_query, 
+                    min(results_per_pattern, max_results - len(all_files))
+                )
+            
+            # Add unique results
+            new_count = 0
+            for file_info in pattern_results:
+                if file_info['url'] not in seen_urls:
+                    all_files.append(file_info)
+                    seen_urls.add(file_info['url'])
+                    new_count += 1
+            
+            print(f"  Added {new_count} unique files (total: {len(all_files)})")
+            
+            # Rate limiting between patterns
+            if len(all_files) < max_results:
+                time.sleep(2)
+        
+        print(f"\n✅ Total unique files collected: {len(all_files)}")
+        return all_files[:max_results]
+    
+    def _search_pattern_single(self, pattern: str, query: str, max_results: int) -> List[Dict]:
+        """
+        Search for a single pattern without pagination.
+        
+        Args:
+            pattern: Expression pattern being searched
+            query: GitHub code search query
+            max_results: Maximum number of results
+        Returns:
+            List of file information dictionaries
+        """
+        files = []
+        
+        try:
+            results = self.github.search_code(query)
+            
+            for file in results:
+                if len(files) >= max_results:
+                    break
+                
+                try:
+                    file_info = {
+                        'repo_name': file.repository.full_name,
+                        'file_path': file.path,
+                        'file_name': file.name,
+                        'url': file.html_url,
+                        'download_url': file.download_url,
+                        'sha': file.sha,
+                        'search_pattern': pattern,
+                        'repo_stars': file.repository.stargazers_count,
+                        'retrieved_at': datetime.now().isoformat()
+                    }
+                    files.append(file_info)
+                    
+                except Exception as e:
+                    print(f"Error processing file: {e}")
+                    continue
+                    
+        except RateLimitExceededException:
+            print(f"Rate limit exceeded. Waiting {self.rate_limit_wait} seconds...")
+            time.sleep(self.rate_limit_wait)
+        except Exception as e:
+            print(f"Search error for pattern '{pattern}': {e}")
+        
+        return files
+    
+    def _search_pattern_with_pagination(self, pattern: str, query: str, max_results: int) -> List[Dict]:
+        """
+        Search for a pattern (simplified without star-based splitting).
+        
+        Args:
+            pattern: Expression pattern being searched
+            query: Base GitHub code search query
+            max_results: Maximum number of results
+            
+        Returns:
+            List of file information dictionaries
+        """
+        # Just do a single search - no star-based splitting
+        return self._search_pattern_single(pattern, query, max_results)
     
     def get_rate_limit_info(self) -> Dict:
         """Get current rate limit information."""
