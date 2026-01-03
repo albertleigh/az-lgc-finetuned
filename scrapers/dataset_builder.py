@@ -41,17 +41,13 @@ class DatasetBuilder:
     
     def scrape_workflows(self, 
                         max_files: int = 100,
-                        min_stars: int = 0,
-                        search_patterns: Optional[List[str]] = None,
-                        use_pagination: bool = True) -> int:
+                        search_patterns: Optional[List[str]] = None) -> int:
         """
         Scrape Logic App workflows from GitHub.
         
         Args:
-            max_files: Maximum number of files to scrape (can exceed 1000 with pagination)
-            min_stars: Minimum repository stars
+            max_files: Maximum number of files to scrape
             search_patterns: Optional list of patterns to search for
-            use_pagination: Enable pagination strategy to exceed 1000 result limit
             
         Returns:
             Number of files scraped
@@ -65,14 +61,11 @@ class DatasetBuilder:
         if search_patterns:
             files = self.scraper.search_by_expression_patterns(
                 search_patterns,
-                max_results=max_files,
-                use_pagination_strategy=use_pagination
+                max_results=max_files
             )
         else:
             files = self.scraper.search_logic_app_files(
-                max_results=max_files,
-                min_stars=min_stars,
-                use_pagination_strategy=use_pagination
+                max_results=max_files
             )
         
         self.raw_files = files
