@@ -111,6 +111,32 @@ class TestLogicAppExpressionParser:
         assert 'concat' in result['functions_used']
         assert 'variables' in result['functions_used']
         assert result['nesting_level'] > 1
+    
+    def test_workflow_with_list_format(self, parser):
+        """Test extracting expressions from workflow with triggers/actions as lists."""
+        workflow = {
+            "definition": {
+                "triggers": [
+                    {
+                        "type": "Request",
+                        "inputs": {
+                            "body": "@{triggerBody()}"
+                        }
+                    }
+                ],
+                "actions": [
+                    {
+                        "type": "Compose",
+                        "inputs": "@{concat('Hello', variables('name'))}"
+                    }
+                ]
+            }
+        }
+        
+        expressions = parser.extract_all_expressions(workflow)
+        assert len(expressions) >= 2
+        assert any('triggerBody' in e['functions_used'] for e in expressions)
+        assert any('concat' in e['functions_used'] for e in expressions)
 
 
 class TestGitHubScraper:

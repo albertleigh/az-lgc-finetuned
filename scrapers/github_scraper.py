@@ -45,7 +45,7 @@ class GitHubLogicAppScraper:
         self.rate_limit_wait = 60  # seconds to wait when rate limited
         
     def search_logic_app_files(self, 
-                                query: str = 'filename:workflow.json OR filename:LogicApp.json',
+                                query: str = '"Microsoft.Logic/workflows" OR "$schema" logic language:JSON',
                                 max_results: int = 100,
                                 min_stars: int = 0) -> List[Dict]:
         """

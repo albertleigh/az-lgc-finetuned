@@ -18,19 +18,19 @@ def main():
     parser.add_argument(
         '--max-files',
         type=int,
-        default=100,
+        default=1e4,
         help='Maximum number of workflow files to scrape (default: 100)'
     )
     parser.add_argument(
         '--min-stars',
         type=int,
-        default=5,
+        default=0,
         help='Minimum repository stars (default: 5)'
     )
     parser.add_argument(
         '--min-quality',
         type=float,
-        default=0.5,
+        default=0.0,
         help='Minimum quality score for training samples (default: 0.5)'
     )
     parser.add_argument(
