@@ -18,7 +18,7 @@ def main():
     parser.add_argument(
         '--max-files',
         type=int,
-        default=1500,
+        default=20000,
         help='Maximum number of workflow files to scrape (default: 100)'
     )
     parser.add_argument(
@@ -66,22 +66,33 @@ def main():
     print(f"\nGitHub API Rate Limits:")
     print(f"  Search: {rate_info.get('search_remaining', 'N/A')}/{rate_info.get('search_limit', 'N/A')}")
     print(f"  Core: {rate_info.get('core_remaining', 'N/A')}/{rate_info.get('core_limit', 'N/A')}")
-    
-    if rate_info.get('search_remaining', 0) < 10:
-        print("\n⚠️  Warning: Low search API rate limit. Consider using a GitHub token.")
-        response = input("Continue anyway? (y/n): ")
-        if response.lower() != 'y':
-            print("Exiting...")
-            return
+
     
     # Step 1: Scrape workflows
     print("\n" + "=" * 70)
     print("STEP 1: Scraping Logic App Workflows from GitHub")
     print("=" * 70)
-    
+
+    # If no patterns specified and max_files > 1000, use default patterns to exceed limit
+    patterns_to_use = args.patterns
+    if not patterns_to_use and args.max_files > 1000:
+        print("\n💡 Using default expression patterns to exceed 1000-result limit")
+        patterns_to_use = [
+            'concat(',
+            'variables(',
+            'parameters(',
+            'triggerBody(',
+            'json(',
+            'if(',
+            'actions(',
+        ]
+        print(f"   Patterns: {', '.join(patterns_to_use)}")
+        print(f"   Each pattern can return up to 1000 results (deduplicated)")
+        print()
+
     num_files = builder.scrape_workflows(
-        max_files=args.max_files,
-        search_patterns=args.patterns
+        max_files=int(args.max_files),
+        search_patterns=patterns_to_use
     )
     
     if num_files == 0:

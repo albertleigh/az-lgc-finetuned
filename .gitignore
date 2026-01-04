@@ -38,7 +38,9 @@ wheels/
 datasets/*.json
 datasets/*.jsonl
 datasets/*.csv
+datasets/updated/**
 !datasets/.gitkeep
+datasets_dist/**
 
 # Testing
 .pytest_cache/

@@ -231,7 +231,7 @@ class GitHubLogicAppScraper:
                 time.sleep(2)
         
         print(f"\n✅ Total unique files collected: {len(all_files)}")
-        return all_files[:max_results]
+        return all_files[:int(max_results)]
     
     def _search_pattern_with_pagination(self, pattern: str, query: str, max_results: int) -> List[Dict]:
         """
@@ -260,7 +260,7 @@ class GitHubLogicAppScraper:
                     file_info['search_pattern'] = pattern
                     files.append(file_info)
                 return files
-            
+
             # Use explicit page-based pagination
             page_num = 0
             
