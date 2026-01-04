@@ -6,12 +6,14 @@ Reads training dataset files and generates concise natural language descriptions
 import os
 import json
 import glob
+import asyncio
 from pathlib import Path
 from typing import List, Dict
 from datetime import datetime
 from dotenv import load_dotenv
-from openai import AzureOpenAI
+from openai import AzureOpenAI, AsyncAzureOpenAI
 from tqdm import tqdm
+from tqdm.asyncio import tqdm as async_tqdm
 import time
 
 # Load environment variables
@@ -20,18 +22,29 @@ load_dotenv()
 class NaturalLanguageGenerator:
     """Generate natural language descriptions for Logic App expressions using Azure OpenAI."""
     
-    def __init__(self):
-        """Initialize Azure OpenAI client."""
+    def __init__(self, max_concurrent: int = 10):
+        """Initialize Azure OpenAI client.
+        
+        Args:
+            max_concurrent: Maximum number of concurrent API requests (default: 10)
+        """
         self.client = AzureOpenAI(
             api_key=os.getenv('AZURE_OPENAI_API_KEY'),
             api_version=os.getenv('AZURE_OPENAI_API_VERSION', '2024-08-01-preview'),
             azure_endpoint=os.getenv('AZURE_OPENAI_ENDPOINT')
         )
+        self.async_client = AsyncAzureOpenAI(
+            api_key=os.getenv('AZURE_OPENAI_API_KEY'),
+            api_version=os.getenv('AZURE_OPENAI_API_VERSION', '2024-08-01-preview'),
+            azure_endpoint=os.getenv('AZURE_OPENAI_ENDPOINT')
+        )
         self.deployment = os.getenv('AZURE_OPENAI_DEPLOYMENT', 'al-gpt-5')
+        self.max_concurrent = max_concurrent
         
         print(f"✅ Initialized Azure OpenAI")
         print(f"   Endpoint: {os.getenv('AZURE_OPENAI_ENDPOINT')}")
         print(f"   Deployment: {self.deployment}")
+        print(f"   Max concurrent requests: {max_concurrent}")
     
     def generate_natural_language(self, expression: str, context: str = "", functions: List[str] = None) -> str:
         """
@@ -94,17 +107,65 @@ Natural language description:"""
             print(f"\n❌ Error generating description: {e}")
             return f"Logic App expression: {expression}"
     
-    def process_dataset_file(self, file_path: str, output_dir: str = None) -> Dict:
-        """
-        Process a single training dataset file.
+    async def generate_natural_language_async(self, expression: str, context: str = "", functions: List[str] = None, semaphore: asyncio.Semaphore = None) -> str:
+        """Async version of generate_natural_language for parallel processing."""
+        if semaphore:
+            async with semaphore:
+                return await self._generate_natural_language_async_impl(expression, context, functions)
+        else:
+            return await self._generate_natural_language_async_impl(expression, context, functions)
+    
+    async def _generate_natural_language_async_impl(self, expression: str, context: str = "", functions: List[str] = None) -> str:
+        """Implementation of async natural language generation."""
+        # Build context information
+        context_info = ""
+        if functions:
+            context_info += f"\nFunctions used: {', '.join(functions)}"
+        if context:
+            # Extract the last part of context for brevity
+            context_parts = context.split('.')
+            context_info += f"\nUsed in: {context_parts[-1] if context_parts else context}"
         
-        Args:
-            file_path: Path to the training dataset JSON file
-            output_dir: Optional output directory (defaults to same location with _updated suffix)
+        # Create prompt
+        prompt = f"""You are an expert in Azure Logic Apps. Given a Logic App expression, generate a concise, natural language description of what it does.
+
+Expression: {expression}{context_info}
+
+Provide a short, clear description (1-2 sentences) that explains what this expression does in plain English. Focus on the action/data it represents, not the technical syntax.
+
+Examples:
+- "@items('For_each')" → "Get the current item in the For_each loop"
+- "@parameters('param1')" → "Get the value of parameter param1"
+- "@concat('Hello ', variables('name'))" → "Concatenate the text 'Hello ' with the value of variable name"
+- "@triggerBody()?['data']" → "Get the data property from the trigger request body"
+
+Natural language description:"""
+
+        try:
+            response = await self.async_client.chat.completions.create(
+                model=self.deployment,
+                messages=[
+                    {"role": "system", "content": "You are an expert in Azure Logic Apps who provides clear, concise explanations."},
+                    {"role": "user", "content": prompt}
+                ],
+                # max_completion_tokens=200,
+            )
             
-        Returns:
-            Dictionary with statistics
-        """
+            description = response.choices[0].message.content.strip()
+            
+            # Clean up the description
+            if description.startswith('"') and description.endswith('"'):
+                description = description[1:-1]
+            if description.startswith("'") and description.endswith("'"):
+                description = description[1:-1]
+            
+            return description
+            
+        except Exception as e:
+            return f"Logic App expression: {expression}"
+    
+    async def process_dataset_file_async(self, file_path: str, output_dir: str = None) -> Dict:
+        """Async version of process_dataset_file for parallel processing."""
         print(f"\n{'='*70}")
         print(f"Processing: {Path(file_path).name}")
         print(f"{'='*70}")
@@ -114,18 +175,25 @@ Natural language description:"""
             dataset = json.load(f)
         
         print(f"Loaded {len(dataset)} samples")
+        print(f"Processing with up to {self.max_concurrent} concurrent requests...")
+        
+        # Create semaphore for rate limiting
+        semaphore = asyncio.Semaphore(self.max_concurrent)
         
         # Process each sample
         updated_count = 0
         error_count = 0
         
-        for sample in tqdm(dataset, desc="Generating descriptions"):
+        async def process_sample(sample, idx):
+            """Process a single sample."""
+            nonlocal updated_count, error_count
             try:
                 # Generate natural language description
-                new_description = self.generate_natural_language(
+                new_description = await self.generate_natural_language_async(
                     expression=sample['expression'],
                     context=sample.get('context', ''),
-                    functions=sample.get('functions', [])
+                    functions=sample.get('functions', []),
+                    semaphore=semaphore
                 )
                 
                 # Update the sample
@@ -133,15 +201,18 @@ Natural language description:"""
                 sample['nl_updated_at'] = datetime.now().isoformat()
                 updated_count += 1
                 
-                # Rate limiting - avoid overwhelming API
-                time.sleep(0.5)
-                
             except Exception as e:
                 error_count += 1
                 if error_count <= 5:
-                    tqdm.write(f"❌ Error processing sample: {e}")
-                continue
+                    tqdm.write(f"❌ Error processing sample {idx}: {e}")
         
+        # Create tasks for all samples with progress bar
+        tasks = [process_sample(sample, idx) for idx, sample in enumerate(dataset)]
+        
+        # Run all tasks concurrently with progress tracking
+        for coro in async_tqdm(asyncio.as_completed(tasks), total=len(tasks), desc="Generating descriptions"):
+            await coro
+
         # Save updated dataset
         if output_dir is None:
             # Save to same directory with _updated suffix
@@ -167,6 +238,19 @@ Natural language description:"""
             'errors': error_count,
             'output': str(output_path)
         }
+    
+    def process_dataset_file(self, file_path: str, output_dir: str = None) -> Dict:
+        """
+        Process a single training dataset file (sync wrapper for async version).
+        
+        Args:
+            file_path: Path to the training dataset JSON file
+            output_dir: Optional output directory (defaults to same location with _updated suffix)
+            
+        Returns:
+            Dictionary with statistics
+        """
+        return asyncio.run(self.process_dataset_file_async(file_path, output_dir))
     
     def process_all_datasets(self, pattern: str = "datasets/training_dataset_*.json", output_dir: str = "datasets/updated") -> List[Dict]:
         """
@@ -249,12 +333,18 @@ def main():
         type=str,
         help='Process a single file instead of pattern matching'
     )
+    parser.add_argument(
+        '--max-concurrent',
+        type=int,
+        default=10,
+        help='Maximum number of concurrent API requests (default: 10)'
+    )
     
     args = parser.parse_args()
     
     # Initialize generator
     try:
-        generator = NaturalLanguageGenerator()
+        generator = NaturalLanguageGenerator(max_concurrent=args.max_concurrent)
     except Exception as e:
         print(f"❌ Failed to initialize Azure OpenAI client: {e}")
         print("\nMake sure you have set the following environment variables in .env:")
