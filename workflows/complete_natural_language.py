@@ -22,12 +22,14 @@ load_dotenv()
 class NaturalLanguageGenerator:
     """Generate natural language descriptions for Logic App expressions using Azure OpenAI."""
     
-    def __init__(self, max_concurrent: int = 10):
+    def __init__(self, max_concurrent: int = None):
         """Initialize Azure OpenAI client.
         
         Args:
-            max_concurrent: Maximum number of concurrent API requests (default: 10)
+            max_concurrent: Maximum number of concurrent API requests (default: CPU core count)
         """
+        if max_concurrent is None:
+            max_concurrent = os.cpu_count() or 10
         self.client = AzureOpenAI(
             api_key=os.getenv('AZURE_OPENAI_API_KEY'),
             api_version=os.getenv('AZURE_OPENAI_API_VERSION', '2024-08-01-preview'),
@@ -336,8 +338,8 @@ def main():
     parser.add_argument(
         '--max-concurrent',
         type=int,
-        default=10,
-        help='Maximum number of concurrent API requests (default: 10)'
+        default=os.cpu_count(),
+        help=f'Maximum number of concurrent API requests (default: {os.cpu_count()} CPU cores)'
     )
     
     args = parser.parse_args()
