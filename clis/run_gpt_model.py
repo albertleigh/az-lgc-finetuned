@@ -118,8 +118,8 @@ Examples:
     parser.add_argument(
         '--model-path',
         type=str,
-        default='Q:/home/azLgcExp/azLgcExpGpt_HF',
-        help='Path to the model directory'
+        default='albertleigh/azlgc-gpt',
+        help='Path to the model directory or HuggingFace model ID (default: albertleigh/azlgc-gpt)'
     )
 
     args = parser.parse_args()

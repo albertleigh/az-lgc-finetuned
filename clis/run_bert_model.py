@@ -119,8 +119,8 @@ Examples:
     parser.add_argument(
         '--model-path',
         type=str,
-        default='Q:/home/azLgcExp/bert_classifier_azlgcexp_base',
-        help='Path to the model directory'
+        default='albertleigh/azlgc-bert-classifier',
+        help='Path to the model directory or HuggingFace model ID (default: albertleigh/bert_classifier_azlgcexp_base)'
     )
 
     args = parser.parse_args()
