@@ -258,6 +258,31 @@ After creating your dataset:
 4. **Format for your model**: Adapt the JSONL format to your specific model requirements
 5. **Fine-tune**: Use the dataset with your chosen model (e.g., Salesforce/codegen-350M-mono)
 
+## Trained Models
+
+This project includes two pre-trained models:
+
+### BERT Classifier
+- **Purpose**: Classify if text is an Azure Logic App expression
+- **Model**: `albertleigh/azlgc-bert-classifier` (HuggingFace)
+- **Accuracy**: ~95-98% on test set
+- **Usage**: `python clis/run_bert_model.py`
+
+### GPT-2 Generator
+- **Purpose**: Generate Logic App expressions from natural language
+- **Model**: `albertleigh/azlgc-gpt` (HuggingFace)
+- **Usage**: `python clis/run_gpt_model.py`
+
+**See [docs/CLI_USAGE.md](docs/CLI_USAGE.md)** for complete CLI documentation.
+
+## Documentation
+
+- **[Getting Started](docs/GETTING_STARTED.md)** - Step-by-step beginner's guide
+- **[Project Structure](docs/PROJECT_STRUCTURE.md)** - Detailed project organization
+- **[Pagination](docs/PAGINATION.md)** - Collecting large datasets (>1000 files)
+- **[CLI Usage](docs/CLI_USAGE.md)** - Using BERT classifier and GPT generator
+- **[Model Training](docs/MODEL_TRAINING.md)** - Training models with Jupyter notebooks
+
 ## Troubleshooting
 
 ### Rate Limit Errors
