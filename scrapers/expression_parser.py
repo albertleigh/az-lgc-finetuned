@@ -51,13 +51,27 @@ class LogicAppExpressionParser:
         try:
             data = json.loads(content)
             
-            # Check for Logic App indicators
+            # Check for ARM template with Logic App resources
+            if 'resources' in data and isinstance(data.get('resources'), list):
+                for resource in data['resources']:
+                    if isinstance(resource, dict):
+                        resource_type = resource.get('type', '')
+                        if 'Microsoft.Logic/workflows' in resource_type:
+                            return True
+            
+            # Check for Logic App indicators (direct workflow or definition wrapper)
             indicators = [
+                # Standard Azure Logic App schema
                 '$schema' in data and 'logic' in str(data.get('$schema', '')).lower(),
-                'definition' in data and isinstance(data['definition'], dict),
-                'actions' in data or ('definition' in data and 'actions' in data['definition']),
-                'triggers' in data or ('definition' in data and 'triggers' in data['definition']),
-                'parameters' in data and '$connections' in data.get('parameters', {})
+                # Workflow with definition wrapper
+                'definition' in data and isinstance(data['definition'], dict) and 
+                ('actions' in data['definition'] or 'triggers' in data['definition']),
+                # Direct actions/triggers (could be dict or list)
+                ('actions' in data and 'triggers' in data),
+                # Has Logic App parameters with connections
+                'parameters' in data and '$connections' in data.get('parameters', {}),
+                # Check for staticResults (specific to Logic Apps)
+                'staticResults' in data and ('actions' in data or 'definition' in data)
             ]
             
             return any(indicators)
@@ -164,21 +178,42 @@ class LogicAppExpressionParser:
         """
         expressions = []
         
+        # Handle ARM template format - extract Logic App from resources
+        if 'resources' in workflow and isinstance(workflow.get('resources'), list):
+            for resource in workflow['resources']:
+                if isinstance(resource, dict) and 'Microsoft.Logic/workflows' in resource.get('type', ''):
+                    # Extract the workflow properties
+                    if 'properties' in resource:
+                        workflow = resource['properties']
+                        break
+        
         # Check if workflow has a 'definition' wrapper
         if 'definition' in workflow:
             workflow = workflow['definition']
         
-        # Extract from actions
+        # Extract from actions (handle both dict and list formats)
         if 'actions' in workflow:
-            for action_name, action_def in workflow['actions'].items():
-                context = f"actions.{action_name}"
-                expressions.extend(self.extract_expressions_from_value(action_def, context))
+            actions = workflow['actions']
+            if isinstance(actions, dict):
+                for action_name, action_def in actions.items():
+                    context = f"actions.{action_name}"
+                    expressions.extend(self.extract_expressions_from_value(action_def, context))
+            elif isinstance(actions, list):
+                for idx, action_def in enumerate(actions):
+                    context = f"actions[{idx}]"
+                    expressions.extend(self.extract_expressions_from_value(action_def, context))
         
-        # Extract from triggers
+        # Extract from triggers (handle both dict and list formats)
         if 'triggers' in workflow:
-            for trigger_name, trigger_def in workflow['triggers'].items():
-                context = f"triggers.{trigger_name}"
-                expressions.extend(self.extract_expressions_from_value(trigger_def, context))
+            triggers = workflow['triggers']
+            if isinstance(triggers, dict):
+                for trigger_name, trigger_def in triggers.items():
+                    context = f"triggers.{trigger_name}"
+                    expressions.extend(self.extract_expressions_from_value(trigger_def, context))
+            elif isinstance(triggers, list):
+                for idx, trigger_def in enumerate(triggers):
+                    context = f"triggers[{idx}]"
+                    expressions.extend(self.extract_expressions_from_value(trigger_def, context))
         
         # Extract from parameters
         if 'parameters' in workflow:

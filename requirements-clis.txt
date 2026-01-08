@@ -1,0 +1,5 @@
+# Requirements for CLI tools and building executables
+pyinstaller>=6.0.0
+transformers>=4.57.1
+torch>=2.0.0
+huggingface_hub>=0.34.0,<1.0

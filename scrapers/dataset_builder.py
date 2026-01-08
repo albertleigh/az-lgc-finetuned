@@ -41,14 +41,12 @@ class DatasetBuilder:
     
     def scrape_workflows(self, 
                         max_files: int = 100,
-                        min_stars: int = 0,
                         search_patterns: Optional[List[str]] = None) -> int:
         """
         Scrape Logic App workflows from GitHub.
         
         Args:
             max_files: Maximum number of files to scrape
-            min_stars: Minimum repository stars
             search_patterns: Optional list of patterns to search for
             
         Returns:
@@ -67,8 +65,7 @@ class DatasetBuilder:
             )
         else:
             files = self.scraper.search_logic_app_files(
-                max_results=max_files,
-                min_stars=min_stars
+                max_results=max_files
             )
         
         self.raw_files = files
@@ -99,43 +96,62 @@ class DatasetBuilder:
         print(f"\n=== Processing {len(files)} Workflow Files ===")
         
         processed_count = 0
+        error_count = 0
+        skipped_not_workflow = 0
+        skipped_no_expressions = 0
         
         for file_info in tqdm(files, desc="Processing workflows"):
-            # Download content
-            content = self.scraper.download_file_content(file_info)
-            if not content:
-                continue
-            
-            # Check if it's a Logic App workflow
-            if not self.parser.is_logic_app_workflow(content):
-                continue
-            
-            # Parse workflow
-            workflow = self.parser.parse_workflow(content)
-            if not workflow:
-                continue
-            
-            # Extract expressions
-            expressions = self.parser.extract_all_expressions(workflow)
-            
-            if expressions:
-                workflow_data = {
-                    'file_info': file_info,
-                    'workflow': workflow,
-                    'expressions': expressions,
-                    'expression_count': len(expressions),
-                    'statistics': self.parser.get_expression_statistics(expressions),
-                    'processed_at': datetime.now().isoformat()
-                }
+            try:
+                # Download content
+                content = self.scraper.download_file_content(file_info)
+                if not content:
+                    continue
                 
-                self.processed_workflows.append(workflow_data)
-                self.expressions.extend(expressions)
-                processed_count += 1
+                # Check if it's a Logic App workflow
+                if not self.parser.is_logic_app_workflow(content):
+                    skipped_not_workflow += 1
+                    continue
+                
+                # Parse workflow
+                workflow = self.parser.parse_workflow(content)
+                if not workflow:
+                    continue
+                
+                # Extract expressions
+                expressions = self.parser.extract_all_expressions(workflow)
+                
+                if expressions:
+                    workflow_data = {
+                        'file_info': file_info,
+                        'workflow': workflow,
+                        'expressions': expressions,
+                        'expression_count': len(expressions),
+                        'statistics': self.parser.get_expression_statistics(expressions),
+                        'processed_at': datetime.now().isoformat()
+                    }
+                    
+                    self.processed_workflows.append(workflow_data)
+                    self.expressions.extend(expressions)
+                    processed_count += 1
+                else:
+                    skipped_no_expressions += 1
+            
+            except Exception as e:
+                # Log error but continue processing other files
+                error_count += 1
+                if error_count <= 5:  # Only show first 5 errors to avoid spam
+                    tqdm.write(f"Error processing {file_info.get('file_path', 'unknown')}: {str(e)}")
         
         # Save processed workflows
         save_results(self.processed_workflows, self.output_dir / "processed_workflows.json")
         
         print(f"\nProcessed {processed_count} workflows with {len(self.expressions)} total expressions")
+        if skipped_not_workflow > 0:
+            print(f"Skipped {skipped_not_workflow} files (not Logic App workflows)")
+        if skipped_no_expressions > 0:
+            print(f"Skipped {skipped_no_expressions} workflows (no expressions found)")
+        if error_count > 0:
+            print(f"Skipped {error_count} files due to errors")
         
         return processed_count
     

@@ -37,11 +37,11 @@ GITHUB_TOKEN=ghp_your_token_here
 Start with a small sample:
 
 ```bash
-python scrape_logic_apps.py --max-files 20 --min-stars 10
+python scrape_logic_apps.py --max-files 20
 ```
 
 This will:
-1. Search GitHub for 20 Logic App workflow files from repos with 10+ stars
+1. Search GitHub for 20 Logic App workflow files
 2. Download and parse them
 3. Extract expressions
 4. Create training datasets in multiple formats
@@ -67,14 +67,11 @@ datasets/
 # Scrape more files
 python scrape_logic_apps.py --max-files 100
 
-# Focus on high-quality repos
-python scrape_logic_apps.py --min-stars 50
-
-# Search for specific expression patterns
-python scrape_logic_apps.py --patterns concat variables triggerBody
+# Search for specific expression patterns (recommended for > 1000 files)
+python scrape_logic_apps.py --max-files 2000 --patterns "concat(" "variables(" "triggerBody("
 
 # Adjust quality threshold
-python scrape_logic_apps.py --min-quality 0.7
+python scrape_logic_apps.py --min-quality 0.5
 
 # Keep duplicate expressions
 python scrape_logic_apps.py --no-deduplicate
@@ -120,16 +117,16 @@ from scrapers import DatasetBuilder
 builder = DatasetBuilder(output_dir="my_dataset")
 builder.initialize_scraper()
 
-# Scrape
-builder.scrape_workflows(max_files=50, min_stars=10)
+# Scrape workflows
+builder.scrape_workflows(max_files=50)
 
-# Parse
+# Parse and extract expressions
 builder.download_and_parse_workflows()
 
-# Create dataset
+# Create training dataset
 builder.create_training_dataset(min_quality_score=0.5)
 
-# Get stats
+# Get statistics
 report = builder.generate_statistics_report()
 print(f"Created {report['total_samples']} training samples")
 ```
@@ -196,30 +193,32 @@ Choose from:
 
 ### 1. Start Small
 ```bash
-python scrape_logic_apps.py --max-files 10
+python scrape_logic_apps.py --max-files 20
 ```
 
 ### 2. Increase Gradually
 ```bash
-python scrape_logic_apps.py --max-files 50
 python scrape_logic_apps.py --max-files 100
 python scrape_logic_apps.py --max-files 500
+python scrape_logic_apps.py --max-files 1000
 ```
 
-### 3. Focus on Quality
+### 3. Use Patterns for Large Datasets (> 1000 files)
 ```bash
-# Get expressions from popular repos
-python scrape_logic_apps.py --min-stars 100 --max-files 50
+# Exceeds single-query limit via multiple pattern searches
+python scrape_logic_apps.py --max-files 2000 --patterns "concat(" "variables(" "parameters("
+# Or let the script auto-select patterns
+python scrape_logic_apps.py --max-files 2000
 ```
 
 ### 4. Target Specific Patterns
 ```bash
 # Focus on common functions
-python scrape_logic_apps.py --patterns concat variables parameters triggerBody
+python scrape_logic_apps.py --max-files 500 --patterns "concat(" "variables(" "triggerBody("
 ```
 
 ### 5. Analyze Your Data
-```bash
+```python
 # Open the CSV in Excel or pandas
 import pandas as pd
 df = pd.read_csv('datasets/training_dataset_*.csv')
@@ -231,12 +230,14 @@ print(df['functions'].value_counts())
 ### Without Token
 - Search: 10 requests/minute
 - Core: 60 requests/hour
-- **Recommendation**: Only for testing
+- **Recommendation**: Only for quick testing with < 20 files
 
 ### With Token
 - Search: 30 requests/minute  
 - Core: 5,000 requests/hour
-- **Recommendation**: Required for production use
+- **Recommendation**: Required for serious dataset collection
+
+**Note**: Each pattern search uses 1 search API request. Using 3 patterns = 3 requests.
 
 ## Troubleshooting
 
@@ -251,20 +252,21 @@ print(df['functions'].value_counts())
 
 ### Problem: No workflows found
 **Solution**:
-- Lower `--min-stars` (try 0)
-- Remove `--patterns` filter
 - Check your internet connection
+- Verify GitHub token is set in `.env` file
+- Try a smaller `--max-files` value first
 
 ### Problem: Low quality samples
 **Solution**:
-- Lower `--min-quality` (try 0.3)
+- Lower `--min-quality` (try 0.0 to include all)
 - Increase `--max-files` for more variety
-- Target repos with more stars
+- Use `--patterns` to target specific expression types
 
 ### Problem: Too many duplicates
 **Solution**: Deduplication is on by default, but if you still see many:
-- Increase `--max-files` to get more repos
-- Use `--patterns` to diversify
+- Increase `--max-files` to get more unique repos
+- Use diverse `--patterns` to get varied expressions
+- Note: Some duplication is normal across popular Logic App patterns
 
 ## Next Steps: Fine-Tuning
 

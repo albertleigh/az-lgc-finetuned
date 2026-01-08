@@ -33,7 +33,7 @@ def example_1_basic_scraping():
     print("\nSearching for Logic App workflows...")
     files = scraper.search_logic_app_files(
         max_results=10,
-        min_stars=5
+        min_stars=0
     )
     
     print(f"\nFound {len(files)} workflow files:")
