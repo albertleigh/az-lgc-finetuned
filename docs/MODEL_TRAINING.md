@@ -107,7 +107,7 @@ tokenizer.push_to_hub('albertleigh/azlgc-bert-classifier')
 
 ### Running the Notebook
 
-1. **Open in VS Code**:
+1. **Open in GCP Colab**:
    ```bash
    code notebooks/az_lgc_exp_catagory_bert.ipynb
    ```
@@ -231,7 +231,7 @@ tokenizer.push_to_hub('albertleigh/azlgc-gpt')
 
 ### Running the Notebook
 
-1. **Open in VS Code**:
+1. **Open in GCP Colab**:
    ```bash
    code notebooks/az_lgc_exp_gpt2.ipynb
    ```
